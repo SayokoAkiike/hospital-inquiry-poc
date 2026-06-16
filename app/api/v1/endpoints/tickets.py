@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -23,9 +23,26 @@ SLA_HOURS = {
 }
 
 
+async def run_ai_classification(ticket_id: uuid.UUID, title: str, description: str):
+    from app.services.ai_service import classify_ticket
+    from app.core.database import AsyncSessionLocal
+    try:
+        category, urgency = await classify_ticket(title, description)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+            ticket = result.scalar_one_or_none()
+            if ticket:
+                ticket.ai_category = category
+                ticket.ai_urgency = urgency
+                await db.commit()
+    except Exception as e:
+        print(f"AI classification failed: {e}")
+
+
 @router.post("", response_model=TicketResponse, status_code=201)
 async def create_ticket(
     data: TicketCreate,
+    background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -39,6 +56,12 @@ async def create_ticket(
     db.add(ticket)
     await db.flush()
     await db.refresh(ticket)
+
+    if settings.ANTHROPIC_API_KEY:
+        background_tasks.add_task(
+            run_ai_classification, ticket.id, ticket.title, ticket.description
+        )
+
     return ticket
 
 
