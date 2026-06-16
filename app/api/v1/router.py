@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     escalations,
     kpi,
     messages,
+    notifications,
     patients,
     tickets,
 )
@@ -18,3 +19,4 @@ api_router.include_router(messages.router, prefix="/tickets", tags=["メッセ�
 api_router.include_router(escalations.router, prefix="/tickets", tags=["エスカレーション"])
 api_router.include_router(kpi.router, prefix="/kpi", tags=["KPI"])
 api_router.include_router(audit.router, prefix="/audit-logs", tags=["監査ログ"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["通知"])
