@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    admin,
     audit,
     auth,
     escalations,
@@ -20,3 +21,4 @@ api_router.include_router(escalations.router, prefix="/tickets", tags=["エス�
 api_router.include_router(kpi.router, prefix="/kpi", tags=["KPI"])
 api_router.include_router(audit.router, prefix="/audit-logs", tags=["監査ログ"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知"])
+api_router.include_router(admin.router, prefix="/admin", tags=["管理"])
