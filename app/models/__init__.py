@@ -1,9 +1,9 @@
-from app.models.user import User, UserRole
-from app.models.patient import Patient
-from app.models.ticket import Ticket, TicketStatus, TicketPriority, AICategory
-from app.models.message import Message
+from app.models.audit_log import AuditAction, AuditLog
 from app.models.escalation import Escalation
-from app.models.audit_log import AuditLog, AuditAction
+from app.models.message import Message
+from app.models.patient import Patient
+from app.models.ticket import AICategory, Ticket, TicketPriority, TicketStatus
+from app.models.user import User, UserRole
 
 __all__ = [
     "User", "UserRole",

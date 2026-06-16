@@ -2,14 +2,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.ticket import Ticket, TicketPriority, TicketStatus
+from app.models.ticket import Ticket, TicketPriority
 from app.models.user import User, UserRole
 from app.schemas.ticket import TicketCreate, TicketResponse, TicketUpdate
 
@@ -24,8 +24,8 @@ SLA_HOURS = {
 
 
 async def run_ai_classification(ticket_id: uuid.UUID, title: str, description: str):
-    from app.services.ai_service import classify_ticket
     from app.core.database import AsyncSessionLocal
+    from app.services.ai_service import classify_ticket
     try:
         category, urgency = await classify_ticket(title, description)
         async with AsyncSessionLocal() as db:

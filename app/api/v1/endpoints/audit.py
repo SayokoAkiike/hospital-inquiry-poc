@@ -1,16 +1,16 @@
+import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from sqlalchemy import select
-import uuid
-from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.audit_log import AuditLog, AuditAction
+from app.models.audit_log import AuditAction, AuditLog
 from app.models.user import User, UserRole
-from pydantic import BaseModel
 
 
 class AuditLogResponse(BaseModel):
