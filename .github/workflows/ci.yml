@@ -70,4 +70,5 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           SECRET_KEY: test-secret-key
           ANTHROPIC_API_KEY: ""
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/hospital_poc_test
         run: poetry run pytest tests/ -v --cov=app
