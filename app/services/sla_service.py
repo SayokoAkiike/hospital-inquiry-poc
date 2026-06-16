@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ticket import Ticket, TicketStatus
 from app.models.notification import NotificationType
+from app.models.ticket import Ticket, TicketStatus
 from app.services.notification_service import create_notification
 
 
