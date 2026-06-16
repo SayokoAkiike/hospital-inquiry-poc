@@ -218,3 +218,5 @@ __marimo__/
 .streamlit/secrets.toml
 .env.production
 docker/certs/
+.DS_Store
+**/.DS_Store
