@@ -13,7 +13,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
 from app.schemas.user import UserCreate, UserResponse
 
@@ -25,6 +25,13 @@ async def register(
     data: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """
+    患者の自己登録エンドポイント。
+
+    セキュリティ方針: UserCreate スキーマに role フィールドが存在しないため、
+    リクエストに role を含めても無視される。ここでは常に PATIENT を割り当てる。
+    ADMIN / NURSE / DOCTOR ロールはこのエンドポイントからは作成できない。
+    """
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="このメールアドレスは既に登録されています")
@@ -33,7 +40,7 @@ async def register(
         email=data.email,
         hashed_password=get_password_hash(data.password),
         full_name=data.full_name,
-        role=data.role,
+        role=UserRole.PATIENT,
     )
     db.add(user)
     await db.flush()
