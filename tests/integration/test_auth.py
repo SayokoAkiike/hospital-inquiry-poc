@@ -1,100 +1,136 @@
-import os
+"""
+認証・認可テスト。
+
+このファイルは role escalation 防止を中心にテストする:
+- health check
+- register / duplicate email
+- login success / failure
+- refresh token / invalid token
+- role escalation prevention（register で role を送ってもPATIENTになること）
+"""
 import pytest
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-
-from app.main import app
-from app.core.database import Base, get_db
-
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:password@db:5432/hospital_poc_test"
-)
+from httpx import AsyncClient
 
 
-@pytest.fixture(scope="function")
-async def engine():
-    _engine = create_async_engine(TEST_DATABASE_URL)
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    yield _engine
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await _engine.dispose()
+async def test_health_check(client: AsyncClient):
+    response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 
-@pytest.fixture
-async def client(engine):
-    TestSessionLocal = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-    async def override_get_db():
-        async with TestSessionLocal() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-async def test_register(client):
+async def test_register_creates_patient(client: AsyncClient):
     response = await client.post(
         "/api/v1/auth/register",
-        json={
-            "email": "test@hospital.com",
-            "password": "password123",
-            "full_name": "テストユーザー",
-            "role": "nurse",
-        },
+        json={"email": "test@hospital.com", "password": "password123", "full_name": "テストユーザー"},
     )
     assert response.status_code == 201
     data = response.json()
     assert data["email"] == "test@hospital.com"
-    assert data["role"] == "nurse"
+    assert data["role"] == "patient"
 
 
-async def test_login(client):
-    await client.post(
+@pytest.mark.parametrize("attempted_role", ["admin", "doctor", "nurse"])
+async def test_register_role_escalation_prevented(client: AsyncClient, attempted_role):
+    """
+    register に role を含めて送っても、UserCreate スキーマに role フィールドが
+    存在しないため無視され、常に patient として作成されることを確認する。
+    これはセキュリティ上、最も重要なテストの一つ。
+    """
+    response = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "test@hospital.com",
+            "email": f"escalate_{attempted_role}@hospital.com",
             "password": "password123",
-            "full_name": "テストユーザー",
-            "role": "nurse",
+            "full_name": "権限昇格試行ユーザー",
+            "role": attempted_role,  # 無視されるべき
         },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["role"] == "patient", f"role={attempted_role} を送ってもpatientになるべき"
+
+
+async def test_duplicate_email_rejected(client: AsyncClient):
+    payload = {"email": "dup@hospital.com", "password": "password123", "full_name": "重複ユーザー"}
+    first = await client.post("/api/v1/auth/register", json=payload)
+    assert first.status_code == 201
+
+    second = await client.post("/api/v1/auth/register", json=payload)
+    assert second.status_code == 400
+
+
+async def test_login_success(client: AsyncClient):
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "login@hospital.com", "password": "password123", "full_name": "ログインテスト"},
     )
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": "test@hospital.com", "password": "password123"},
+        json={"email": "login@hospital.com", "password": "password123"},
     )
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
 
 
-async def test_login_wrong_password(client):
+async def test_login_wrong_password(client: AsyncClient):
     await client.post(
         "/api/v1/auth/register",
-        json={
-            "email": "test@hospital.com",
-            "password": "password123",
-            "full_name": "テストユーザー",
-            "role": "nurse",
-        },
+        json={"email": "wrongpw@hospital.com", "password": "password123", "full_name": "テスト"},
     )
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": "test@hospital.com", "password": "wrongpassword"},
+        json={"email": "wrongpw@hospital.com", "password": "wrongpassword"},
+    )
+    assert response.status_code == 401
+
+
+async def test_login_unknown_user(client: AsyncClient):
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "notexist@hospital.com", "password": "password123"},
+    )
+    assert response.status_code == 401
+
+
+async def test_refresh_token_success(client: AsyncClient):
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "refresh@hospital.com", "password": "password123", "full_name": "リフレッシュテスト"},
+    )
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "refresh@hospital.com", "password": "password123"},
+    )
+    refresh_token = login_resp.json()["refresh_token"]
+
+    response = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+async def test_refresh_token_invalid(client: AsyncClient):
+    response = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": "this-is-not-a-valid-token"},
+    )
+    assert response.status_code == 401
+
+
+async def test_access_protected_endpoint_without_token(client: AsyncClient):
+    """トークンなしで認証必須エンドポイントにアクセスすると401になること。"""
+    response = await client.get("/api/v1/tickets")
+    assert response.status_code in (401, 403)
+
+
+async def test_access_protected_endpoint_with_invalid_token(client: AsyncClient):
+    response = await client.get(
+        "/api/v1/tickets",
+        headers={"Authorization": "Bearer invalid-token-value"},
     )
     assert response.status_code == 401
